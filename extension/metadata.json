@@ -8,5 +8,5 @@
   ],
   "url": "https://github.com/awikman-bot/screenshot-scan",
   "settings-schema": "org.gnome.shell.extensions.screenshot-scan",
-  "version-name": "0.1.1"
+  "version-name": "0.1.2"
 }

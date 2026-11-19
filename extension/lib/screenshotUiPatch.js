@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// ┌──────────────────────────────────────────────────────────────────────┐
-// │ THIS FILE IS THE ONLY PLACE THAT TOUCHES PRIVATE GNOME SHELL CODE.   │
-// │ It is what breaks when GNOME Shell is upgraded. See AGENTS.md,       │
-// │ "Private gnome-shell internals" and "Porting to a new GNOME version".│
-// └──────────────────────────────────────────────────────────────────────┘
+// All access to private GNOME Shell code is kept in this file, so it is the
+// part to check when GNOME Shell is upgraded.
 //
 // GNOME's screenshot UI (Print Screen) is `Main.screenshotUI`, an instance of
 // `ScreenshotUI` from resource:///org/gnome/shell/ui/screenshot.js. It has no

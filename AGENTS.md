@@ -47,6 +47,11 @@ chose English only, 2026-11-19).
   languages. The repo is public: never commit internal or personal data.
   Decide implementation details yourself and document them (here or in `docs/research.md`).
 - Run `make check` before every commit. Commit small, push often.
+- **All changes go through pull requests**, never direct pushes to `main`
+  (`main` will be protected). Branch, push the branch to this repo, open a
+  PR with `gh pr create`. Release tags are pushed after the PR is merged.
+  Other contributors (e.g. tswfi) also work here; check open PRs and
+  branches before starting overlapping work.
 - Never copy code without checking its license and crediting it (header
   comment + `CREDITS.md`). Nothing GPL-3.0-only, nothing unlicensed.
 - Commits/PRs as `awikman-bot` (gh and git are authenticated; git uses SSH).
