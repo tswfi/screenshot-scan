@@ -1,0 +1,101 @@
+# Runs the checks (`make check`) on the newest Fedora release and the two
+# before it, so on three GNOME Shell versions.
+#
+# Triggers: every pull request, every push to main, by hand ("Run workflow"
+# on the Actions page), and from release.yml, which must pass this first.
+#
+# The Fedora versions are not written here: the "versions" job asks the
+# fedora:latest container image for its number, so a new Fedora release is
+# picked up with no edit to this file.
+#
+# A GNOME Shell version that is not in "shell-version" in
+# extension/metadata.json cannot load the extension. On such a Fedora the
+# e2e tests are skipped (with a notice) and only lint + `make test` run.
+#
+# How GNOME Shell runs in a container (see AGENTS.md, "CI"):
+#   --privileged     GNOME encodes screenshots in a bwrap sandbox (glycin),
+#                    and bwrap cannot start in a default container.
+#   system D-Bus     GNOME Shell stops at startup without one.
+#   dbusmock logind  the image has no systemd; this fakes the login service
+#                    (GNOME's own CI does the same).
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  versions:
+    name: Find Fedora versions
+    runs-on: ubuntu-latest
+    outputs:
+      fedora: ${{ steps.find.outputs.fedora }}
+    steps:
+      - name: Newest Fedora release and the two before it
+        id: find
+        run: |
+          latest=$(docker run --rm registry.fedoraproject.org/fedora:latest \
+            sh -c '. /etc/os-release && echo "$VERSION_ID"')
+          case "$latest" in
+            ''|*[!0-9]*) echo "Unexpected Fedora version: '$latest'"; exit 1 ;;
+          esac
+          echo "fedora=[\"$latest\", \"$((latest - 1))\", \"$((latest - 2))\"]" >> "$GITHUB_OUTPUT"
+          echo "Testing on Fedora $latest, $((latest - 1)) and $((latest - 2))"
+
+  check:
+    name: Fedora ${{ matrix.fedora }}
+    needs: versions
+    runs-on: ubuntu-latest
+    strategy:
+      # One version failing must not hide the result of the others.
+      fail-fast: false
+      matrix:
+        fedora: ${{ fromJSON(needs.versions.outputs.fedora) }}
+    container:
+      image: registry.fedoraproject.org/fedora:${{ matrix.fedora }}
+      options: --privileged
+    steps:
+      - name: Install packages
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            make git npm python3 python3-dbusmock dbus-daemon procps-ng \
+            gjs gnome-shell gtk4 mesa-dri-drivers adwaita-sans-fonts \
+            zbar tesseract tesseract-langpack-eng
+
+      - uses: actions/checkout@v7
+
+      - name: Start system D-Bus and a mock login service
+        run: |
+          mkdir -p /run/dbus
+          dbus-daemon --system --fork
+          python3 -m dbusmock --system --template logind > /tmp/dbusmock.log 2>&1 &
+          sleep 2
+
+      - name: Run checks
+        run: |
+          gnome-shell --version
+          major=$(gnome-shell --version | sed -n 's/^GNOME Shell \([0-9]*\).*/\1/p')
+          if grep -q "\"$major\"" extension/metadata.json; then
+            make check
+          else
+            echo "::notice::GNOME Shell $major (Fedora ${{ matrix.fedora }}) is not in shell-version: e2e tests skipped, lint and make test only."
+            make lint test
+          fi
+
+      - name: Keep e2e logs and snapshots
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-fedora-${{ matrix.fedora }}
+          if-no-files-found: ignore
+          path: |
+            tests/e2e/out/*/shell.log
+            tests/e2e/out/*/result.json
+            tests/e2e/out/*/*.png
