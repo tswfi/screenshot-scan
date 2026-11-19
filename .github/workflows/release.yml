@@ -1,0 +1,48 @@
+# Builds the extension zip and publishes it as a GitHub Release.
+#
+# Trigger: push a tag v<version-name>, e.g.
+#   git tag v0.1.0 && git push origin v0.1.0
+# The tag must match "version-name" in extension/metadata.json.
+#
+# The zip is the same file `make pack` builds locally, so it is also the one
+# to upload to extensions.gnome.org (that upload is manual: the site has no
+# token-based upload API).
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # Fedora ships the gnome-extensions tool used by `make pack`.
+    container: fedora:44
+    steps:
+      - name: Install build tools
+        run: dnf install -y --setopt=install_weak_deps=False make gnome-shell gh git python3
+
+      - uses: actions/checkout@v5
+
+      - name: Check tag matches version-name
+        run: |
+          version=$(python3 -c "import json; print(json.load(open('extension/metadata.json'))['version-name'])")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match version-name $version in extension/metadata.json"
+            exit 1
+          fi
+
+      - name: Build zip
+        run: make pack
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          gh release create "$GITHUB_REF_NAME" build/*.shell-extension.zip \
+            --title "$GITHUB_REF_NAME" --generate-notes --verify-tag

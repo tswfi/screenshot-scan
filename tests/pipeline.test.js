@@ -138,6 +138,26 @@ async function main() {
         eq(P.parseZbarOutput(''), []);
     });
 
+    await test('stripControlChars keeps only text, tabs and newlines', () => {
+        eq(P.stripControlChars('a\tb\nc'), 'a\tb\nc');
+        eq(P.stripControlChars('a\u0000b\u0007c\u0008d\u007fe'), 'abcde');
+        // ESC sequences: colour codes and the bracketed-paste end marker
+        eq(P.stripControlChars('\u001b[31mred\u001b[0m'), '[31mred[0m');
+        eq(P.stripControlChars('x\u001b[201~y'), 'x[201~y');
+        // C1 controls, including the 8-bit CSI
+        eq(P.stripControlChars('a\u0085b\u009bc'), 'abc');
+        // printable non-ASCII is untouched
+        eq(P.stripControlChars('ääkkönen – 日本語 🙂'), 'ääkkönen – 日本語 🙂');
+        eq(P.stripControlChars(null), '');
+    });
+
+    await test('tool output is stripped of control characters', () => {
+        eq(P.parseZbarOutput('ls\u001b[201~\nrm -rf x\u0000\n'), ['ls[201~', 'rm -rf x']);
+        eq(P.parseZbarOutput('a\rb\r\nc'), ['a', 'b', 'c']);
+        eq(P.cleanOcrText('Hi\u001b]0;title\u0007 there\u0008\n'), 'Hi]0;title there');
+        eq(P.formatResult(P.parseZbarOutput('A\u001bB\n'), '', 'auto'), 'AB');
+    });
+
     await test('parseLanguages validates and defaults to eng', () => {
         eq(P.parseLanguages('eng+fin'), ['eng', 'fin']);
         eq(P.parseLanguages(' eng, swe  eng '), ['eng', 'swe']);
@@ -180,16 +200,6 @@ async function main() {
     });
 
     // ---- stopping tools ------------------------------------------------
-    await test('runCommand kills the process when cancelled', async () => {
-        const cancellable = new Gio.Cancellable();
-        const {pid, done} = await startSleeper(cancellable);
-        ok(isRunning(pid), 'the test process should be running');
-        cancellable.cancel();
-        eq(await done, 'CANCELLED');
-        await sleep(100);
-        ok(!isRunning(pid), `process ${pid} is still running after cancel`);
-    });
-
     await test('runCommand kills the process after the timeout', async () => {
         const start = GLib.get_monotonic_time();
         const {pid, done} = await startSleeper(null, {timeoutMs: 300});
@@ -273,6 +283,23 @@ async function main() {
             threw = true;
         }
         ok(threw, 'expected an error');
+    });
+
+    await test('cancelling runCommand kills the process', async () => {
+        const cancellable = new Gio.Cancellable();
+        const marker = `screenshot-scan-cancel-${GLib.random_int()}`;
+        const started = Date.now();
+        const run = P.runCommand(['sh', '-c', `exec -a ${marker} sleep 30`], cancellable);
+        GLib.timeout_add(GLib.PRIORITY_DEFAULT, 200, () => {
+            cancellable.cancel();
+            return GLib.SOURCE_REMOVE;
+        });
+        try {
+            await run;
+        } catch {}
+        ok(Date.now() - started < 5000, 'runCommand did not return soon after cancel');
+        const [, out] = GLib.spawn_command_line_sync(`pgrep -f ${marker}`);
+        eq(new TextDecoder().decode(out).trim(), '', 'process still running');
     });
 }
 

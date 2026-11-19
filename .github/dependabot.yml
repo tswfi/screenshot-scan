@@ -3,7 +3,7 @@
 #
 # The only package manifest is package.json, which holds dev tooling (eslint).
 # The extension itself ships no npm dependencies, so these PRs never change
-# what users install. Add a "github-actions" entry if CI workflows appear.
+# what users install. The github-actions entry keeps the release workflow current.
 
 version: 2
 updates:
@@ -19,3 +19,8 @@ updates:
     ignore:
       # Pinned to a GitLab commit on purpose; Dependabot cannot track it.
       - dependency-name: "eslint-config-gnome"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

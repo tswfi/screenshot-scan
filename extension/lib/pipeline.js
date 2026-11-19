@@ -54,16 +54,39 @@ export function parseLanguages(value) {
 }
 
 /**
- * Cleans raw tesseract output: drops form feeds, trailing spaces and
- * leading/trailing blank lines, and collapses 2+ blank lines into one.
+ * Every Unicode control character (category Cc: C0, DEL and C1) except tab
+ * and newline. Written as "not (non-control, tab or newline)".
+ */
+const CONTROL_CHARS = /[^\P{Cc}\t\n]/gu;
+
+/**
+ * Removes control characters, keeping tab and newline.
+ *
+ * What is on screen is untrusted: a QR code can carry any bytes, and the
+ * result is pasted wherever the user likes. An ESC or a bracketed-paste end
+ * marker pasted into a terminal can run commands, so nothing but printable
+ * text, tabs and newlines reaches the clipboard or the notification.
+ * Call this after line endings are normalised (a lone CR is removed here).
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+export function stripControlChars(text) {
+    return String(text ?? '').replace(CONTROL_CHARS, '');
+}
+
+/**
+ * Cleans raw tesseract output: drops form feeds, control characters,
+ * trailing spaces and leading/trailing blank lines, and collapses 2+ blank
+ * lines into one.
  *
  * @param {string} raw
  * @returns {string}
  */
 export function cleanOcrText(raw) {
-    return String(raw ?? '')
+    return stripControlChars(String(raw ?? '')
         .replace(/\r\n?/g, '\n')
-        .replace(/\f/g, '\n')
+        .replace(/\f/g, '\n'))
         .split('\n')
         .map(line => line.replace(/[ \t]+$/, ''))
         .join('\n')
@@ -72,7 +95,8 @@ export function cleanOcrText(raw) {
 }
 
 /**
- * Splits `zbarimg --raw` output into one payload per line.
+ * Splits `zbarimg --raw` output into one payload per line, with control
+ * characters removed (see stripControlChars).
  *
  * Note: with `--raw`, a payload that itself contains newlines (e.g. a
  * multi-line QR code) is printed across several lines. That is fine for the
@@ -82,8 +106,8 @@ export function cleanOcrText(raw) {
  * @returns {string[]}
  */
 export function parseZbarOutput(raw) {
-    return String(raw ?? '')
-        .replace(/\r\n?/g, '\n')
+    return stripControlChars(String(raw ?? '')
+        .replace(/\r\n?/g, '\n'))
         .split('\n')
         .map(line => line.replace(/\s+$/, ''))
         .filter(line => line.length > 0);
@@ -157,8 +181,9 @@ export function runCommand(argv, cancellable = null, {timeoutMs = COMMAND_TIMEOU
 
     const proc = launcher.spawnv(argv);
 
-    // If already cancelled, the handler runs right here and the process dies
-    // before it does any work.
+    // Cancelling only stops the wait; also stop the process itself so that
+    // disable() or a newer scan never leaves a tesseract run behind. If
+    // already cancelled, the handler runs right here.
     const cancelId = cancellable?.connect(() => proc.force_exit()) ?? 0;
 
     let timedOut = false;

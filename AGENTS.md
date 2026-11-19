@@ -20,6 +20,11 @@ area, a window or the screen:
 
 Everything runs locally, with no network access.
 
+What is on screen is untrusted input (anyone can show you a QR code). Tool
+output is stripped of control characters, keeping tab and newline
+(`stripControlChars` in `lib/pipeline.js`), so a pasted result cannot send
+escape sequences to a terminal.
+
 Default result (`result-mode = auto`): code payloads one per line if any were
 found, otherwise the OCR text. Other modes: `codes`, `text`, `both` (codes,
 blank line, text). OCR languages: `ocr-languages`, default `eng` (the owner
@@ -68,6 +73,8 @@ tests/
 docs/research.md                how other extensions hook the UI; why this design
 docs/screenshot.png             README image (crop of the e2e snapshot; refresh it after UI changes)
 install.sh / uninstall.sh       user install, no sudo
+.github/workflows/release.yml   tag v* → builds the zip, publishes a GitHub Release
+.github/dependabot.yml          weekly npm (lint tooling) + GitHub Actions updates
 Makefile                        make help
 eslint.config.js, package.json  lint tooling only (node_modules/ is gitignored)
 ```
@@ -175,6 +182,31 @@ Debugging:
 - `install.sh` run by the agent installs into the *agent's* home, not the
   owner's. The owner installs on their desktop themselves.
 
+## Releasing
+
+1. Bump `"version-name"` in `extension/metadata.json` (semver, e.g. `0.2.0`)
+   and commit after `make check`.
+2. `git tag v0.2.0 && git push origin v0.2.0`. The Release workflow checks the
+   tag matches `version-name`, runs `make pack` in a Fedora container and
+   attaches the zip to a GitHub Release. Users install it with
+   `gnome-extensions install --force <zip>`, then log out and in.
+3. extensions.gnome.org (EGO): the owner uploads the same zip by hand at
+   https://extensions.gnome.org/upload/ under their own account (created
+   2026-11-19). EGO has no token upload API, so this is not automated; do not
+   store the owner's EGO password anywhere.
+
+EGO review notes (rules: https://gjs.guide/extensions/review-guidelines/review-guidelines.html):
+
+- Since Dec 2025 EGO rejects AI-generated extensions; this one is, and the
+  owner knows. Expect rejection or questions; never hide the origin.
+- Spawning tesseract/zbarimg is allowed only as "unavoidable": OCR and
+  barcode decoding have no GJS-only option. Processes must exit cleanly:
+  `runCommand` kills the child on cancel and after a 60 s timeout (both
+  tested), and `disable()` cancels.
+- Clipboard use must stay mentioned in the metadata description.
+- `shell-version` must list only released versions (no future ones). 51 is
+  listed but only source-reviewed; see "Version status".
+
 ## Manual desktop test checklist (for the owner)
 
 1. `git clone git@github.com:awikman-bot/screenshot-scan.git && cd screenshot-scan && ./install.sh`
@@ -217,5 +249,5 @@ Debugging:
 
 | GNOME Shell | Status |
 |---|---|
-| 50.6 (Fedora 44) | `make check` passes (22 pipeline tests, 17 e2e checks, 2 missing-tool checks), 2026-11-19. Desktop test by owner: **passed** 2026-11-19 (one fix: Scan button overlapped the capture button, now `CenterSafeBinLayout`) |
+| 50.6 (Fedora 44) | `make check` passes (24 pipeline tests, 17 e2e checks, 2 missing-tool checks), 2026-11-19. Desktop test by owner: **passed** 2026-11-19 (one fix: Scan button overlapped the capture button, now `CenterSafeBinLayout`) |
 | 51.1 (Fedora 45) | Source diff reviewed (hooked code unchanged). **Run `make check` after upgrading.** |
